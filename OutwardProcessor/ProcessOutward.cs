@@ -42,6 +42,23 @@ namespace OutwardProcessor
             timer1.Interval = delay;
             timer1.Enabled = true;
             timer1.Stop();
+            BindOceComboBoxValues();
+        }
+
+        private void BindOceComboBoxValues()
+        {
+            oceTypeComboBox.DisplayMember = "Text";
+            oceTypeComboBox.ValueMember = "Value";
+
+            var items = new[]
+            {
+                new { Text = "-SELECT-", Value = "" },
+                new { Text = "OCE HV", Value = "HV" },
+                new { Text = "OCE RV", Value = "RV" },
+                new { Text = "IRE HV", Value = "IREHV" },
+                new { Text = "IRE RV", Value = "IRERV" },
+            };
+            oceTypeComboBox.DataSource = items;
         }
 
         private void OnElapsedTime(object source, ElapsedEventArgs e)
@@ -54,16 +71,20 @@ namespace OutwardProcessor
             {
                 Invoke(new Action(() =>
                 {
-                    HvOrRv = oceTypeComboBox.Text;
-                    statusLabel.Text = "OCE " + HvOrRv + " is being processed...";
+                    HvOrRv = (oceTypeComboBox.SelectedItem as dynamic).Value;
+                    statusLabel.Text = oceTypeComboBox.Text + " is being processed...";
                     ProcessTransaction();
-                    statusLabel.Text = "OCE " + HvOrRv + " has been processed";
+                    statusLabel.Text = oceTypeComboBox.Text + " has been processed";
                     EnableDisableFormControl(true);
-
                 }));
             }
             catch (Exception ex)
             {
+                Invoke(new Action(() =>
+                {
+                    statusLabel.Text = "Error! " + ex.Message;
+                    EnableDisableFormControl(true);
+                }));
                 WriteLog("Error Processing Transaction: " + ex.Message);
             }
             WriteLog("Going to sleep...");
@@ -81,7 +102,7 @@ namespace OutwardProcessor
         {
             statusLabel.Text = "Processing started...";
             EnableDisableFormControl(false);
-            if (oceTypeComboBox.Text == "")
+            if ((oceTypeComboBox.SelectedItem as dynamic).Value == "")
             {
                 statusLabel.Text = "Please select OCE Type";
                 EnableDisableFormControl(true);
@@ -105,12 +126,13 @@ namespace OutwardProcessor
             {
                 oceTypeComboBox.Enabled = enable;
                 startOutwardProcessingBtn.Enabled = enable;
+                deleteAccountsButton.Enabled = enable;
             }));
         }
 
         protected void WriteLog(string Msg)
         {
-            FileStream fs = new FileStream(AppVariable.LogPath + "\\BulkCustomer_CBS-Outward-" + System.DateTime.Today.ToString("yyyyMMdd") + ".log", FileMode.OpenOrCreate, FileAccess.Write);
+            FileStream fs = new FileStream(AppVariable.LogPath + "\\CBS-Outward-BulkCustomer-" + System.DateTime.Today.ToString("yyyyMMdd") + ".log", FileMode.OpenOrCreate, FileAccess.Write);
             StreamWriter sw = new StreamWriter(fs);
             sw.BaseStream.Seek(0, SeekOrigin.End);
             sw.WriteLine(System.DateTime.Now.ToString() + ": " + Msg);
@@ -224,14 +246,12 @@ namespace OutwardProcessor
                 data.HV = table.Rows[i]["HV"].ToString();
                 data.OrderSeq = table.Rows[i]["OrderSeq"].ToString();
                 data.TrCd = table.Rows[i]["TrCd"].ToString();
-                bool NoCharge = false;
-                if (data.TrCd == "31" || data.TrCd == "32" || data.TrCd == "99")
-                {
-                    NoCharge = true;
-                }
+                bool NoCharge = CheckChargeFlag(data.TrCd);
+                
                 data.ProductCode = GetProductCode(data.CCY, "OU", data.OrderSeq, NoCharge);
 
-                data.UtilityBill = HvOrRv == "RV" ? "FALSE" : table.Rows[i]["NoCharge"].ToString();
+                data.UtilityBill = NoCharge.ToString().ToUpper();
+                // data.UtilityBill = HvOrRv == "RV" ? "FALSE" : NoCharge.ToString().ToUpper(); //table.Rows[i]["NoCharge"].ToString();
                 data.Branch = table.Rows[i]["Branch"].ToString();
                 data.InstDate = table.Rows[i]["InstDate"].ToString();
                 data.ReasonCode = table.Rows[i]["ReasonCode"].ToString();
@@ -282,7 +302,10 @@ namespace OutwardProcessor
                     try
                     {
                         string result = QueryTransaction(data.XREF);
-                        UpdateByQueryTransactionResponse(result, data.Envelop, data.CheckID);
+                        if (HvOrRv == "HV" || HvOrRv == "RV")
+                            UpdateOCEByQueryTransactionResponse(result, data.Envelop, data.CheckID);
+                        else if (HvOrRv == "IREHV" || HvOrRv == "IRERV")
+                            UpdateIREByQueryTransactionResponse(result, data.Envelop, data.CheckID);
                         WriteLog("data.Envelop" + data.Envelop);
 
                         WriteLog("End Processing Query Transaction For " + data.Envelop);
@@ -308,6 +331,21 @@ namespace OutwardProcessor
             }
             table.Dispose();
         }
+
+        private bool CheckChargeFlag(string TrCd)
+        {
+            bool NoCharge = false;
+            if ((HvOrRv == "HV" || HvOrRv == "RV") && (TrCd == "31" || TrCd == "32" || TrCd == "99"))
+            {
+                NoCharge = true;
+            }
+            else if ((HvOrRv == "IREHV" || HvOrRv == "IRERV") && (TrCd == "31" || TrCd == "32"))
+            {
+                NoCharge = true;
+            }
+            return NoCharge;
+        }
+
         private string GetProductCode(string cCY, string clearingType, string session, bool noCharge)
         {
             CPSDB db = new CPSDB();
@@ -318,7 +356,7 @@ namespace OutwardProcessor
             WriteLog("noCharge" + noCharge);
             return db.GetProductCode(cCY, clearingType, session, noCharge);
         }
-        public void UpdateByQueryTransactionResponse(string CBSResult, string Type, string CheckId)
+        public void UpdateOCEByQueryTransactionResponse(string CBSResult, string Type, string CheckId)
         {
             // WriteLog("Inside  ----------- UpdateByQueryTransactionResponse");
             XmlDocument rr = new XmlDocument();
@@ -399,11 +437,78 @@ namespace OutwardProcessor
                     //WriteLog("ROUTINGNO  :" + ROUTINGNO);
 
                     db.InsertTransactionReffOfAOCE(XREF, QueryTransaction_Status, FCCREF, INSTRNO, REMACCOUNT, ROUTINGNO, CheckId);
-
                     //WriteLog("Inside Query Transaction-----END----");
                 }
             }
         }
+
+
+        public void UpdateIREByQueryTransactionResponse(string CBSResult, string Type, string CheckId)
+        {
+            XmlDocument rr = new XmlDocument();
+            CPSDB db = new CPSDB();
+
+            string QueryTransaction_Status = "";
+            string WCODE = "";
+            string XREF = "";
+            string FCCREF = "";
+            string INSTRNO = "";
+            string REMACCOUNT = "";
+            string ROUTINGNO = "";
+            try
+            {
+                rr.LoadXml(CBSResult);
+                QueryTransaction_Status = rr.GetElementsByTagName("WDESC").Item(0).InnerText;
+
+            }
+            catch
+            {
+
+            }
+
+
+            if (rr.GetElementsByTagName("XREF").Count > 0)
+            {
+                XREF = rr.GetElementsByTagName("XREF").Item(0).InnerText;
+                WriteLog("XREF: " + XREF);
+            }
+
+
+            QueryTransaction_Status = rr.GetElementsByTagName("WDESC").Item(0).InnerText;
+            WriteLog("QueryTransaction_Status :" + QueryTransaction_Status);
+
+            XmlNodeList Clearing_Details = rr.GetElementsByTagName("Clearing-Details");
+            foreach (XmlNode node in Clearing_Details)
+            {
+                XmlElement Clearing_DetailsElement = (XmlElement)node;
+                try
+                {
+                    FCCREF = Clearing_DetailsElement.GetElementsByTagName("FCCREF")[0].InnerText;
+
+                }
+                catch { }
+                try
+                {
+                    INSTRNO = Clearing_DetailsElement.GetElementsByTagName("INSTRNO")[0].InnerText;
+                }
+                catch { }
+
+                try
+                {
+                    REMACCOUNT = Clearing_DetailsElement.GetElementsByTagName("REMACCOUNT")[0].InnerText;
+                }
+                catch { }
+                try
+                {
+                    ROUTINGNO = Clearing_DetailsElement.GetElementsByTagName("ROUTINGNO")[0].InnerText;
+                }
+                catch { }
+                db.InsertTransactionReffOfAIRE(XREF, QueryTransaction_Status, FCCREF, INSTRNO, REMACCOUNT, ROUTINGNO, CheckId);
+            }
+
+
+        }
+
         private CBSData ReadResponse(CBSData data, string responsestring)
         {
             XmlDocument doc = new XmlDocument();
@@ -438,7 +543,12 @@ namespace OutwardProcessor
             foreach (XmlNode node in Warning)
             {
                 XmlElement warningElement = (XmlElement)node;
-                data.Status = data.Status + " " + warningElement.GetElementsByTagName("WDESC")[0].InnerText;
+                try
+                {
+                    data.Status = data.Status + " " + warningElement.GetElementsByTagName("WDESC")[0].InnerText;
+                }
+                catch { }
+
             }
             data.CBSResponse = data.Status;
 
@@ -451,6 +561,7 @@ namespace OutwardProcessor
             string xmlstring = "";
 
             if (Envelop == "OCE")
+            {
                 if (UtilityBill.ToUpper() == "FALSE")
                 {
                     xmlstring = OutwardTransactionString(Branch, XREF, HV, RemAccount, BenefAccount, CheckSlNo, CCY, Amount,
@@ -461,6 +572,19 @@ namespace OutwardProcessor
                     xmlstring = OutwardUtilityBillTransactionString(Branch, XREF, HV, RemAccount, BenefAccount, CheckSlNo, CCY, Amount,
                                 TxnDate, ValDate, InstDate, RoutingNo, TxnBrn, RemBranch, InstType, ReasonCode, RejectReason, Envelop, ProductCode);
                 }
+            }
+            else
+            {
+                if (UtilityBill.ToUpper() == "FALSE")
+                {
+                    xmlstring = IRETransactionString(Branch, XREF, TxnBrn, RemAccount, CheckSlNo, RoutingNo, ReasonCode, RejectReason);
+                }
+                else
+                {
+                    xmlstring = IREUtilityTransactionString(Branch, XREF, TxnBrn, RemAccount, CheckSlNo, RoutingNo, ReasonCode, RejectReason);
+                }
+            }
+            //MessageBox.Show(xmlstring);
             return ExecuteCBSWebService(xmlstring);
         }
         private string OutwardUtilityBillTransactionString(string Branch, string XREF, string HV, string RemAccount, string BenefAccount, string CheckSlNo, string CCY, string Amount,
@@ -589,6 +713,104 @@ namespace OutwardProcessor
             "</S:Envelope>";
         }
 
+        public string IRETransactionString(string branch, string XREF, string txnBrn, string REMACCOUNT, string INSTRNO, string ROUTINGNO, string REASONCODE, string REJECTREASON)
+        {
+            string str = "<S:Envelope xmlns:S=\"http://schemas.xmlsoap.org/soap/envelope/\">" +
+             "<S:Body>" +
+             "<CREATECLEARINGREJECT_IOPK_REQ xmlns=\"" + AppVariable.OCREATETRANSACTION_IOPK_REQ + "\">" +
+             "<FCUBS_HEADER>" +
+             "<SOURCE>" + AppVariable.IRESOURCE + "</SOURCE>" +
+             "<UBSCOMP>" + AppVariable.IREUBSCOMP + "</UBSCOMP>" +
+             "<MSGID/>" +
+             "<CORRELID/>" +
+             "<USERID>" + AppVariable.IREUSERID + "</USERID>" +
+             "<BRANCH>" + AppVariable.BRANCH + "</BRANCH>" +
+             "<MODULEID>" + AppVariable.IREMODULEID + "</MODULEID>" +
+             "<SERVICE>" + AppVariable.IRESERVICE + "</SERVICE>" +
+             "<OPERATION>" + AppVariable.IREOPERATION + "</OPERATION>" +
+             "<SOURCE_OPERATION>" + AppVariable.IRESOURCE_OPERATION + "</SOURCE_OPERATION>" +
+             "<SOURCE_USERID/>" +
+             "<DESTINATION/>" +
+             "<MULTITRIPID/>" +
+             "<FUNCTIONID/>" +
+             "<ACTION/>" +
+             "<MSGSTAT></MSGSTAT>" +
+             "<PASSWORD/>" +
+             "<ADDL>" +
+             "<PARAM>" +
+             "<NAME/>" +
+             "<VALUE/>" +
+             "</PARAM>" +
+             "</ADDL>" +
+             "</FCUBS_HEADER>" +
+             "<FCUBS_BODY>" +
+              "<Clearing-Reject-Details-IO>" +
+              "<SCODE>" + AppVariable.IRESOURCE + "</SCODE>" +
+              "<XREF>" + XREF + "</XREF>" +
+              "<TXNBRN>" + AppVariable.IREBRANCH + "</TXNBRN>" +
+              "<REMACCOUNT>" + REMACCOUNT + "</REMACCOUNT>" +
+              "<INSTRNO>" + INSTRNO + "</INSTRNO>" +
+              "<ROUTINGNO>" + ROUTINGNO + "</ROUTINGNO>" +
+              "<REASONCODE>" + REASONCODE + "</REASONCODE>" +
+              "<REJECTREASON>" + REJECTREASON + "</REJECTREASON>" +
+              "</Clearing-Reject-Details-IO>" +
+              "</FCUBS_BODY>" +
+              "</CREATECLEARINGREJECT_IOPK_REQ>" +
+              "</S:Body>" +
+              "</S:Envelope>";
+
+            return str;
+        }
+
+        public string IREUtilityTransactionString(string branch, string XREF, string txnBrn, string REMACCOUNT, string INSTRNO, string ROUTINGNO, string REASONCODE, string REJECTREASON)
+        {
+            string str = "<S:Envelope xmlns:S=\"http://schemas.xmlsoap.org/soap/envelope/\">" +
+             "<S:Body>" +
+             "<CREATECLEARINGREJECT_IOPK_REQ xmlns=\"" + AppVariable.OCREATETRANSACTION_IOPK_REQ + "\">" +
+             "<FCUBS_HEADER>" +
+             "<SOURCE>" + AppVariable.IRESOURCE + "</SOURCE>" +
+             "<UBSCOMP>" + AppVariable.IREUBSCOMP + "</UBSCOMP>" +
+             "<MSGID/>" +
+             "<CORRELID/>" +
+             "<USERID>" + AppVariable.IREUSERID + "</USERID>" +
+             "<BRANCH>" + AppVariable.BRANCH + "</BRANCH>" +
+             "<MODULEID>" + AppVariable.IREMODULEID + "</MODULEID>" +
+             "<SERVICE>" + AppVariable.IRESERVICE + "</SERVICE>" +
+             "<OPERATION>" + AppVariable.IREOPERATION + "</OPERATION>" +
+             "<SOURCE_OPERATION>" + AppVariable.IRESOURCE_OPERATION + "</SOURCE_OPERATION>" +
+             "<SOURCE_USERID/>" +
+             "<DESTINATION/>" +
+             "<MULTITRIPID/>" +
+             "<FUNCTIONID/>" +
+             "<ACTION/>" +
+             "<MSGSTAT></MSGSTAT>" +
+             "<PASSWORD/>" +
+             "<ADDL>" +
+             "<PARAM>" +
+             "<NAME/>" +
+             "<VALUE/>" +
+             "</PARAM>" +
+             "</ADDL>" +
+             "</FCUBS_HEADER>" +
+             "<FCUBS_BODY>" +
+              "<Clearing-Reject-Details-IO>" +
+              "<SCODE>" + AppVariable.IRESOURCE + "</SCODE>" +
+              "<XREF>" + XREF + "</XREF>" +
+              "<TXNBRN>" + AppVariable.IREBRANCH + "</TXNBRN>" +
+              "<REMACCOUNT>" + REMACCOUNT + "</REMACCOUNT>" +
+              "<INSTRNO>" + INSTRNO + "</INSTRNO>" +
+              "<ROUTINGNO>" + ROUTINGNO + "</ROUTINGNO>" +
+              "<REASONCODE>" + REASONCODE + "</REASONCODE>" +
+              "<REJECTREASON>" + REJECTREASON + "</REJECTREASON>" +
+              "</Clearing-Reject-Details-IO>" +
+              "</FCUBS_BODY>" +
+              "</CREATECLEARINGREJECT_IOPK_REQ>" +
+              "</S:Body>" +
+              "</S:Envelope>";
+
+            return str;
+        }
+
         public string ExecuteCBSWebService(string xmlstring)
         {
             string resultxml = "";
@@ -623,6 +845,20 @@ namespace OutwardProcessor
             //WriteLog("Output string:\n" + resultxml);
 
             return resultxml;
+        }
+
+        private void deleteAccountsButton_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                new CPSDB().DeleteAccounts();
+                statusLabel.Text = "Accounts deleted successfully";
+            }
+            catch (Exception ex)
+            {
+                WriteLog(ex.Message);
+                statusLabel.Text = "Error! Please check log for details";
+            }
         }
     }
 }

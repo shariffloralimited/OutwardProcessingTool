@@ -93,6 +93,25 @@ namespace OutwardProcessor.DAL
             cmd.ExecuteNonQuery();
         }
 
+        public void InsertTransactionReffOfAIRE(string XREF, string QueryTransaction_Status, string FCCREF, string INSTRNO, string REMACCOUNT, string ROUTINGNO, string checkId)
+        {
+            if (QueryTransaction_Status.Length > 150)
+                QueryTransaction_Status = QueryTransaction_Status.Substring(0, 150);
+            SqlConnection con = new SqlConnection(AppVariable.ServerLogin);
+            con.Open();
+            SqlCommand cmd = new SqlCommand("CBS_InsertTransactionReffOfAIRE", con);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.AddWithValue("@XREF", XREF);
+            cmd.Parameters.AddWithValue("@QueryTransaction_Status", QueryTransaction_Status);
+            cmd.Parameters.AddWithValue("@FCCREF", FCCREF);
+            cmd.Parameters.AddWithValue("@INSTRNO", INSTRNO);
+            cmd.Parameters.AddWithValue("@REMACCOUNT", REMACCOUNT);
+            cmd.Parameters.AddWithValue("@ROUTINGNO", ROUTINGNO);
+            cmd.Parameters.AddWithValue("@CheckID", new Guid(checkId));
+            cmd.CommandTimeout = 600;
+            cmd.ExecuteNonQuery();
+        }
+
         internal string GetProductCode(string cCY, string ClearingType, string Session, bool NoCharge)
         {
             SqlConnection myConnection = new SqlConnection(AppVariable.ServerLogin);
@@ -128,6 +147,19 @@ namespace OutwardProcessor.DAL
                 return dt.Rows[0]["ProductCode"].ToString();
             else return "";
 
+        }
+
+        public void DeleteAccounts()
+        {
+            SqlConnection myConnection = new SqlConnection(AppVariable.ServerLogin);
+            SqlCommand myCommand = new SqlCommand("CBS_TrancateBulkCustomer", myConnection);
+            myCommand.CommandType = CommandType.StoredProcedure;
+
+            myConnection.Open();
+            myCommand.ExecuteNonQuery();
+            myConnection.Close();
+            myCommand.Dispose();
+            myConnection.Dispose();
         }
     }
 }

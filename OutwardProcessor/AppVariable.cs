@@ -14,7 +14,7 @@ namespace OutwardProcessor
         public static string CBSURI = ConfigurationManager.AppSettings["CBSURI"];
 
         //Outward 
-        public static string OCREATETRANSACTION_IOPK_REQ = ConfigurationManager.AppSettings["ICREATETRANSACTION_IOPK_REQ"];
+        public static string OCREATETRANSACTION_IOPK_REQ = ConfigurationManager.AppSettings["OCREATETRANSACTION_IOPK_REQ"];
         public static string OSOURCE = ConfigurationManager.AppSettings["OSOURCE"];
         public static string OUBSCOMP = ConfigurationManager.AppSettings["OUBSCOMP"];
         public static string OUSERID = ConfigurationManager.AppSettings["OUSERID"];
@@ -24,6 +24,17 @@ namespace OutwardProcessor
         public static string OSOURCE_OPERATION = ConfigurationManager.AppSettings["OSOURCE_OPERATION"];
         public static string OBRANCH = ConfigurationManager.AppSettings["OBRANCH"];
         public static string OROUTINGNO = ConfigurationManager.AppSettings["OROUTINGNO"];
+
+        //IRE 
+        public static string IRESOURCE = ConfigurationManager.AppSettings["IRESOURCE"];
+        public static string IREUBSCOMP = ConfigurationManager.AppSettings["IREUBSCOMP"];
+        public static string IREUSERID = ConfigurationManager.AppSettings["IREUSERID"];
+        public static string IREBRANCH = ConfigurationManager.AppSettings["IREBRANCH"];
+        public static string IREMODULEID = ConfigurationManager.AppSettings["IREMODULEID"];
+        public static string IRESERVICE = ConfigurationManager.AppSettings["IRESERVICE"];
+        public static string IREOPERATION = ConfigurationManager.AppSettings["IREOPERATION"];
+        public static string IRESOURCE_OPERATION = ConfigurationManager.AppSettings["IRESOURCE_OPERATION"];
+        public static string IREROUTINGNO = ConfigurationManager.AppSettings["IREROUTINGNO"];
 
         //Common
         public static string SOURCE = ConfigurationManager.AppSettings["SOURCE"];
